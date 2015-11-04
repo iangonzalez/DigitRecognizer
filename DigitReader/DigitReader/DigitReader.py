@@ -101,7 +101,7 @@ class DigitReader:
 
     def predictDigit(self, input_data, model_location="../classifier/digit_svm.skm"):
         """
-        Return the predicted classes for given pixel input_data (unrolled 27x27 matrix).
+        Return the predicted classes for given pixel input_data (rows of unrolled 27x27 matrices).
         Reads model from given location if classifier not already trained.
         """
         if not self.trained:
@@ -137,6 +137,7 @@ class DigitReader:
 if __name__ == '__main__':
     # -r flag retrains the model
     retrain = "-r" in sys.argv
+
     # -i + file indicates input
     try:
         input_file_idx = sys.argv.index("-i") + 1
@@ -147,9 +148,12 @@ if __name__ == '__main__':
     except:
         input_file = None
 
-    digReader = DigitReader(debug = True)
+    # -debug turns on debug mode
+    debug_flag = "-debug" in sys.argv
 
-    # run the model training with dimensionality reduction:
+    digReader = DigitReader(debug = debug_flag)
+
+    # run the model training with dimensionality reduction if model doesnt exist or retrain needed:
     if not os.path.isfile("../classifier/digit_svm.skm") or retrain:
         sys.stdout.write("Training the classifier and dumping result to classifier folder.\n")
         digReader.getTrainingDataFromCsv("../data/train.csv")
