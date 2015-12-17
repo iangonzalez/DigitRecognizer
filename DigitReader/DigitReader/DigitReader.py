@@ -17,7 +17,7 @@ class ImageReader:
         Reads the image from a file and resizes it to the classifier's required size (27x27)
         """
         self.image = Image.open(fname)
-        self.image = self.image.resize((27,27))
+        self.image = self.image.resize((28,28))
 
     def readImgFromBuffer(self, buf, size):
         self.image = Image.frombuffer("RGBA", size, buf)
@@ -108,8 +108,9 @@ class DigitReader:
             print("Loading model.")
             if not self.loadTrainedModel(model_location):
                 raise Exception("Model file at " + model_location + " does not exist.")
-
-        input_data = self.reduceDimPCA(input_data)
+        print "input", input_data
+        input_data = input_data[0]
+        # input_data = self.reduceDimPCA(input_data)
         if self.debug:
             input_data = input_data[1:100, :]
 
