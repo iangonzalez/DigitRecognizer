@@ -17,7 +17,7 @@ class ImageReader:
         Reads the image from a file and resizes it to the classifier's required size (27x27)
         """
         self.image = Image.open(fname)
-        self.image = self.image.resize((27,27))
+        self.image = self.image.resize((28,28))
 
     def readImgFromBuffer(self, buf, size):
         self.image = Image.frombuffer("RGBA", size, buf)
@@ -99,7 +99,7 @@ class DigitReader:
         except:
             return False
 
-    def predictDigit(self, input_data, model_location="../classifier/digit_svm.skm"):
+    def predictDigit(self, input_data, reduce_dim=True, model_location="../classifier/digit_svm.skm"):
         """
         Return the predicted classes for given pixel input_data (rows of unrolled 27x27 matrices).
         Reads model from given location if classifier not already trained.
@@ -109,25 +109,27 @@ class DigitReader:
             if not self.loadTrainedModel(model_location):
                 raise Exception("Model file at " + model_location + " does not exist.")
 
-        input_data = self.reduceDimPCA(input_data)
+        if reduce_dim:
+           input_data = self.reduceDimPCA(input_data)
+
         if self.debug:
             input_data = input_data[1:100, :]
 
         output_classes = self.svm_classifier.predict(input_data)
         return output_classes
 
-    def predictDigitsFromCsv(self, fname, skiprows=1, model_location="../classifier/digit_svm.skm"):
+    def predictDigitsFromCsv(self, fname, skiprows=1, reduce_dim=False, model_location="../classifier/digit_svm.skm"):
         pixel_data = np.loadtxt(fname, delimiter=",", skiprows=skiprows, ndmin = 2)
-        return self.predictDigit(pixel_data, model_location)
+        pixel_data = pixel_data[:, 1:]
+        return self.predictDigit(pixel_data, reduce_dim, model_location)
 
-    def predictDigitFromImgFiles(self, fnames, model_location="../classifier/digit_svm.skm"):
+    def predictDigitFromImgFiles(self, fnames, reduce_dim=False, model_location="../classifier/digit_svm.skm"):
         image_pixels = []
         for fname in fnames:
             imgReader = ImageReader()
             imgReader.readImgFromFile(fname)
-            image_pixels.append(imgReader.getPxData())
-
-        return self.predictDigit(np.array(image_pixels), model_location)
+            #image_pixels.append()
+            print(self.predictDigit(imgReader.getPxData(), reduce_dim, model_location))
 
 
 
@@ -151,14 +153,22 @@ if __name__ == '__main__':
     # -debug turns on debug mode
     debug_flag = "-debug" in sys.argv
 
+    #reduce dim?
+    PCA_flag = "-pca" in sys.argv
+
     digReader = DigitReader(debug = debug_flag)
 
     # run the model training with dimensionality reduction if model doesnt exist or retrain needed:
-    if not os.path.isfile("../classifier/digit_svm.skm") or retrain:
+    if retrain:
         sys.stdout.write("Training the classifier and dumping result to classifier folder.\n")
         digReader.getTrainingDataFromCsv("../data/train.csv")
-        digReader.reduceDimTrainingData()
-        digReader.trainSVM("../classifier/digit_svm.skm")
+
+        if PCA_flag:
+            print("creating reduced dim classifier.")
+            digReader.reduceDimTrainingData()
+            digReader.trainSVM("../classifier/reducedDim/digit_svm.skm")
+        else:
+            digReader.trainSVM("../classifier/digit_svm.skm")
 
     # predict on the input file if it was given and dump to output.txt:
     if input_file is not None:
@@ -168,4 +178,4 @@ if __name__ == '__main__':
         else:
             digits = digReader.predictDigitFromImgFiles([input_file])
 
-        np.savetxt("../output/output.txt", digits, fmt='%d')
+        #np.savetxt("../output/output.txt", digits, fmt='%d')

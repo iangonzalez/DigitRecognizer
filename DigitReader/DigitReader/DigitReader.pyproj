@@ -13,7 +13,7 @@
     <Name>DigitReader</Name>
     <RootNamespace>DigitReader</RootNamespace>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <CommandLineArguments>"-r"  "-i" "../data/test.csv"</CommandLineArguments>
+    <CommandLineArguments>"-i" "../data/8.jpg"</CommandLineArguments>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
