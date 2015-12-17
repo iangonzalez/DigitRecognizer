@@ -18,6 +18,7 @@ class ImageReader:
         """
         self.image = Image.open(fname)
         self.image = self.image.resize((28,28))
+        self.image.show
 
     def readImgFromBuffer(self, buf, size):
         self.image = Image.frombuffer("RGBA", size, buf)
