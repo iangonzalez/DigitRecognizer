@@ -41,7 +41,7 @@ class ImageReader:
         else:
             raise ValueError("Image hasn't been read in yet.")
 
-# Class to train and predict with the SVM image classifier.
+# Class to train and predict with the model image classifier.
 class DigitReader:
     def __init__(self, classifier=None, debug = False):
         np.random.seed(10)
@@ -91,11 +91,11 @@ class DigitReader:
         print("Reducing dimension of training data.")
         self.trainDataMatrix = self.reduceDimPCA(self.trainDataMatrix)
 
-    def trainSVM(self, saveto=""):
-        print("Training svm model.")
+    def trainModel(self, saveto=""):
+        print("Training digit recognition model.")
         self.classifier.fit(self.trainDataMatrix, self.labels)
 
-        # dump the svm to the given file for later load
+        # dump the model to the given file for later load
         if saveto:
             joblib.dump(self.classifier, saveto)
 
@@ -106,9 +106,10 @@ class DigitReader:
             self.classifier = joblib.load(fname)
             return True
         except:
+            print("couldnt load the model.")
             return False
 
-    def predictDigit(self, input_data, reduce_dim=False, model_location="../classifier/tree/digit_svm.skm"):
+    def predictDigit(self, input_data, reduce_dim=False, model_location="../classifier/tree/digit_model.skm"):
         """
         Return the predicted classes for given pixel input_data (rows of unrolled 27x27 matrices).
         Reads model from given location if classifier not already trained.
@@ -129,11 +130,11 @@ class DigitReader:
         output_classes = self.classifier.predict(input_data)
         return output_classes
 
-    def predictDigitsFromCsv(self, fname, skiprows=1, reduce_dim=False, model_location="../classifier/tree/digit_svm.skm"):
+    def predictDigitsFromCsv(self, fname, skiprows=1, reduce_dim=False, model_location="../classifier/tree/digit_model.skm"):
         pixel_data = np.loadtxt(fname, delimiter=",", skiprows=skiprows, ndmin = 2)
         return self.predictDigit(pixel_data, reduce_dim, model_location)
 
-    def predictDigitFromImgFiles(self, fnames, reduce_dim=False, model_location="../classifier/tree/digit_svm.skm"):
+    def predictDigitFromImgFiles(self, fnames, reduce_dim=False, model_location="../classifier/tree/digit_model.skm"):
         image_pixels = []
         results = []
         for fname in fnames:
@@ -169,10 +170,10 @@ if __name__ == '__main__':
    
     if LDA_flag in sys.argv:
         print("Using LDA model")
-        model_location = "../classifier/lda/digit_svm.skm"
+        model_location = "../classifier/lda/digit_model.skm"
     else: 
         print("Using default Tree Classifier model.")
-        model_location = "../classifier/tree/digit_svm.skm"
+        model_location = "../classifier/tree/digit_model.skm"
     digReader = DigitReader(classifier = LDA_flag, debug = debug_flag)
 
     # run the model training with dimensionality reduction if model doesnt exist or retrain needed:
@@ -180,7 +181,7 @@ if __name__ == '__main__':
         sys.stdout.write("Training the classifier and dumping result to classifier folder " + model_location + "\n")
         digReader.getTrainingDataFromCsv("../data/train.csv")
 
-        digReader.trainSVM(model_location)
+        digReader.trainModel(model_location)
             
 
     # predict on the input file if it was given and dump to output.txt:
@@ -193,5 +194,5 @@ if __name__ == '__main__':
             digits = digReader.predictDigitFromImgFiles([input_file], reduce_dim = PCA_flag, model_location=model_location)
 
         withids = np.transpose(np.array([[i for i in range(1, len(digits) + 1)], digits]))
-        name = "../output/output-" + str(datetime.datetime.now()) + ".csv"
+        name = "../output/output-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M") + ".csv"
         np.savetxt(name, withids, header='ImageId,Label', delimiter=',', fmt=['%d', '%d'], comments='')
