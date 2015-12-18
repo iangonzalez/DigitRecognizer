@@ -1,10 +1,11 @@
 ﻿import sys
 import os
 import numpy as np
-from sklearn.svm import SVC
+#from sklearn.svm import SVC
+from sklearn.lda import LDA
 from sklearn.decomposition import PCA
 from sklearn.externals import joblib
-from sklearn.multiclass import OneVsRestClassifier
+#from sklearn.multiclass import OneVsRestClassifier
 from PIL import Image
 
 # class to handle reading in images as input
@@ -18,7 +19,8 @@ class ImageReader:
         """
         self.image = Image.open(fname)
         self.image = self.image.resize((28,28))
-        self.image.show
+        #self.image.show()
+        #value = raw_input("Any button to continue.")
 
     def readImgFromBuffer(self, buf, size):
         self.image = Image.frombuffer("RGBA", size, buf)
@@ -29,8 +31,13 @@ class ImageReader:
         """
         if self.image is not None:
             imageSize = self.image.size
-
-            imgData = map(lambda px: sum(px[:3])/3, self.image.getdata())
+            print(imageSize)
+            print(self.image.getdata()[0])
+            imgDataRaw = self.image.getdata()
+            try:
+                imgData = map(lambda px: (255.0 - sum(px[:3])/3.0), imgDataRaw)
+            except:
+                imgData = imgData = map(lambda px: (255.0 - px), imgDataRaw)
             imgData = np.array(imgData, np.uint8)
             
             return imgData
@@ -41,7 +48,7 @@ class ImageReader:
 # Class to train and predict with the SVM image classifier.
 class DigitReader:
     def __init__(self, debug = False):
-        self.svm_classifier = OneVsRestClassifier(SVC(kernel="linear"))
+        self.svm_classifier = LDA()
         self.dim_reducer = PCA(n_components=10)
         self.trainDataMatrix = None
         self.train_y = None
@@ -67,11 +74,13 @@ class DigitReader:
         trainingData = np.loadtxt(fname, delimiter=",", skiprows=1, ndmin = 2)
 
         if self.debug:
-            trainingData = trainingData[1:100, :]
+            trainingData = trainingData[:30000, :]
         
         # set the feature matrix and the corresponding labels:
         self.train_y = trainingData[:, 0]
+        print(self.train_y[0:5])
         self.trainDataMatrix = trainingData[:, 1:]
+        print(self.trainDataMatrix[0:5, 120:135])
 
     def reduceDimPCA(self, data):
         """
@@ -100,7 +109,7 @@ class DigitReader:
         except:
             return False
 
-    def predictDigit(self, input_data, reduce_dim=True, model_location="../classifier/digit_svm.skm"):
+    def predictDigit(self, input_data, reduce_dim=False, model_location="../classifier/digit_svm.skm"):
         """
         Return the predicted classes for given pixel input_data (rows of unrolled 27x27 matrices).
         Reads model from given location if classifier not already trained.
@@ -110,14 +119,14 @@ class DigitReader:
             if not self.loadTrainedModel(model_location):
                 raise Exception("Model file at " + model_location + " does not exist.")
 
-        if reduce_dim:
-           input_data = self.reduceDimPCA(input_data)
+        #if reduce_dim:
+        #   input_data = self.reduceDimPCA(input_data)
 
-        if self.debug:
-            input_data = input_data[1:100, :]
+        #if self.debug:
+        #    input_data = input_data[30000:, :]
 
         output_classes = self.svm_classifier.predict(input_data)
-        return output_classes
+        return output_classes   
 
     def predictDigitsFromCsv(self, fname, skiprows=1, reduce_dim=False, model_location="../classifier/digit_svm.skm"):
         pixel_data = np.loadtxt(fname, delimiter=",", skiprows=skiprows, ndmin = 2)
@@ -169,14 +178,26 @@ if __name__ == '__main__':
             digReader.reduceDimTrainingData()
             digReader.trainSVM("../classifier/reducedDim/digit_svm.skm")
         else:
-            digReader.trainSVM("../classifier/digit_svm.skm")
+            digReader.trainSVM("../classifier/ldaSmall/digit_svm.skm")
+
+            #pixel_data = np.loadtxt("../data/train.csv", delimiter=",", skiprows=1, ndmin = 2)
+            #pixel_data_y = pixel_data[:, 0]
+            #pixel_data = pixel_data[:, 1:]
+            
+            #predictions = digReader.predictDigit(pixel_data[30000:, :])
+            #print(pixel_data_y)
+            #print(predictions)
+            #correct = np.equal(predictions, pixel_data_y[30000:])
+            #print(sum(correct))
+            
 
     # predict on the input file if it was given and dump to output.txt:
     if input_file is not None:
         print("Running predictions on the input file.")
         if input_file.endswith(".csv"):
-            digits = digReader.predictDigitsFromCsv(input_file)
+            digits = digReader.predictDigitsFromCsv(input_file,  model_location="../classifier/train1000/digit_svm.skm")
+            
         else:
-            digits = digReader.predictDigitFromImgFiles([input_file])
+            digits = digReader.predictDigitFromImgFiles([input_file],  model_location="../classifier/ldaSmall/digit_svm.skm")
 
         #np.savetxt("../output/output.txt", digits, fmt='%d')
