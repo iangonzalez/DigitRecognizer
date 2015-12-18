@@ -9,6 +9,10 @@ from sklearn.decomposition import PCA
 from sklearn.tree import DecisionTreeClassifier
 from PIL import Image
 
+import matplotlib.pyplot as plt
+from matplotlib import colors
+
+PROB_flag = False
 # class to handle reading in images as input
 class ImageReader:
     def __init__(self):
@@ -56,6 +60,7 @@ class DigitReader:
 
         # debug mode restricts trains/tests to 100 data points
         self.debug = debug
+        self.debug_training_len = 10000
         self.debug_len = 100
 
     def getTrainingDataFromImages(self, fnames, labels):
@@ -75,7 +80,7 @@ class DigitReader:
         trainingData = np.loadtxt(fname, delimiter=",", skiprows=1, ndmin = 2)
 
         if self.debug:
-            trainingData = trainingData[:30000, :]
+            trainingData = trainingData[:self.debug_training_len, :]
         
         # set the feature matrix and the corresponding labels:
         self.labels = trainingData[:, 0]
@@ -108,24 +113,39 @@ class DigitReader:
         except:
             return False
 
+    def gen_plot(self): 
+        features = self.classifier.feature_importances_
+        features = [features[i*28:i*28+28] for i in range(28)]
+        for i in range(28): 
+            for j in range(28): 
+                features[i][j] = float(features[i][j])
+
+        cmap2 = colors.LinearSegmentedColormap.from_list('cmap', ['white', 'black'], 256)
+        img2 = plt.imshow(features,interpolation='nearest', cmap = cmap2, origin='lower')
+        plt.colorbar(img2,cmap=cmap2)
+
     def predictDigit(self, input_data, reduce_dim=False, model_location="../classifier/tree/digit_svm.skm"):
         """
         Return the predicted classes for given pixel input_data (rows of unrolled 27x27 matrices).
         Reads model from given location if classifier not already trained.
         """
+        global PROB_flag
         if not self.trained:
             print("Loading model from\t" + model_location)
             if not self.loadTrainedModel(model_location):
                 raise Exception("Model file at " + model_location + " does not exist.")
 
         if reduce_dim:
-          input_data = self.reduceDimPCA(input_data)
+            input_data = self.reduceDimPCA(input_data)
 
         if self.debug:
-            print("Debugging with first " + self.debug_len + " rows")
-            input_data = input_data[:self.debug_len, :]
+            print("Debugging with first " + str(min(self.debug_len, len(input_data))) + " rows")
+            input_data = input_data[:(self.debug_len), :]
+            
+        if PROB_flag: 
+            probs = self.classifier.predict_proba(input_data)
+            print "Probabilities", probs, [float(x) for x in probs[0]]
 
-       
         output_classes = self.classifier.predict(input_data)
         return output_classes
 
@@ -136,17 +156,58 @@ class DigitReader:
     def predictDigitFromImgFiles(self, fnames, reduce_dim=False, model_location="../classifier/tree/digit_svm.skm"):
         image_pixels = []
         results = []
+        arrs = []
         for fname in fnames:
             imgReader = ImageReader()
             imgReader.readImgFromFile(fname)
             print("Reading from\t\t" + fname)
-            prediction = self.predictDigit(imgReader.getPxData(), reduce_dim, model_location)
+            input_data = imgReader.getPxData()
+            input_data = input_data.reshape(1, -1)
+            prediction = self.predictDigit(input_data, reduce_dim, model_location)
             print ("\tPrediction: " + str(prediction))
             results.append(prediction)
         return results
 
+class ClassifierExplainer: 
+    def __init__(self, reader): 
+        self.reader = reader
+        self.classifier = reader.classifier 
+
+    def explain(self):
+        if isinstance(self.classifier, DecisionTreeClassifier): 
+            self.explain_decision_tree()
+        else: 
+            self.explain_lda()
+
+    def explain_decision_tree(self): 
+        print("Generating decision tree file")
+        left      = self.classifier.tree_.children_left
+        right     = self.classifier.tree_.children_right
+        threshold = self.classifier.tree_.threshold
+        features  = [feature_names[i] for i in self.classifier.tree_.feature]
+        value = self.classifier.tree_.value
+        decision_str = ""
+        gen_decision_tree(left, right, threshold, features, value, decision_str)
+        np.savetxt("../output/decision-tree.txt", decision_str)
+
+    def explain_lda(self):
+        pass
+
+    def gen_decision_tree(self, left, right, threshold, features, node, decision_str):
+        if (threshold[node] != -2):
+                decision_str += "if ( " + features[node] + " <= " + str(threshold[node]) + " ) {" + "\n"
+                if left[node] != -1:
+                        gen_decision_tree (left, right, threshold, features,left[node])
+                decision_str += "} else {" + "\n"
+                if right[node] != -1:
+                        gen_decision_tree (left, right, threshold, features,right[node])
+                decision_str += "}" + "\n"
+        else:
+                decision_str += "return " + str(value[node]) + "\n"
+
 # running the code from the command line:
 if __name__ == '__main__':
+    global PROG_flag
     # -r flag retrains the model
     retrain = "-r" in sys.argv
 
@@ -166,13 +227,15 @@ if __name__ == '__main__':
     # PCA 
     PCA_flag = "-pca" in sys.argv 
     LDA_flag = "-lda" in sys.argv
+    PROB_flag = "-prob" in sys.argv
    
-    if LDA_flag in sys.argv:
+    if LDA_flag:
         print("Using LDA model")
-        model_location = "../classifier/lda/digit_svm.skm"
+        model_location = "../classifier/ldaSmall/digit_svm.skm"
     else: 
         print("Using default Tree Classifier model.")
         model_location = "../classifier/tree/digit_svm.skm"
+
     digReader = DigitReader(classifier = LDA_flag, debug = debug_flag)
 
     # run the model training with dimensionality reduction if model doesnt exist or retrain needed:
@@ -195,3 +258,8 @@ if __name__ == '__main__':
         withids = np.transpose(np.array([[i for i in range(1, len(digits) + 1)], digits]))
         name = "../output/output-" + str(datetime.datetime.now()) + ".csv"
         np.savetxt(name, withids, header='ImageId,Label', delimiter=',', fmt=['%d', '%d'], comments='')
+
+    # generate precise or nonprecise explanations
+    explainer = ClassifierExplainer(digReader)
+    if "-explain-all" in sys.argv: 
+        explainer.explain()
