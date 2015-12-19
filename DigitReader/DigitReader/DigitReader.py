@@ -308,7 +308,6 @@ if __name__ == '__main__':
             digits = digReader.predictDigitFromImgFiles([input_file], reduce_dim = PCA_flag, model_location=model_location)
 
         withids = np.transpose(np.array([[i for i in range(1, len(digits) + 1)], digits]))
-<<<<<<< HEAD
         name = "../output/output-" + str(datetime.datetime.now()) + ".csv"
 
         if SAVE_flag:
@@ -319,7 +318,3 @@ if __name__ == '__main__':
     if "-explain-all" in sys.argv: 
         explainer.explain()
         explainer.gen_path_plot()
-=======
-        name = "../output/output-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M") + ".csv"
-        np.savetxt(name, withids, header='ImageId,Label', delimiter=',', fmt=['%d', '%d'], comments='')
->>>>>>> c4b52e7537a46a3322a3b8c6537470ac2d5aff1b
