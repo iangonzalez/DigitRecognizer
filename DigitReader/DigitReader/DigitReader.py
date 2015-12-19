@@ -44,6 +44,13 @@ class ImageReader:
 
         else:
             raise ValueError("Image hasn't been read in yet.")
+    def getPxDataArray(self): 
+        data = self.getPxData()
+        features = [data[i*28:i*28+28] for i in range(28)]
+        for i in range(28): 
+            for j in range(28): 
+                features[i][j] = float(features[i][j])
+        return features 
 
 # Class to train and predict with the SVM image classifier.
 class DigitReader:
@@ -113,17 +120,6 @@ class DigitReader:
         except:
             return False
 
-    def gen_plot(self): 
-        features = self.classifier.feature_importances_
-        features = [features[i*28:i*28+28] for i in range(28)]
-        for i in range(28): 
-            for j in range(28): 
-                features[i][j] = float(features[i][j])
-
-        cmap2 = colors.LinearSegmentedColormap.from_list('cmap', ['white', 'black'], 256)
-        img2 = plt.imshow(features,interpolation='nearest', cmap = cmap2, origin='lower')
-        plt.colorbar(img2,cmap=cmap2)
-
     def predictDigit(self, input_data, reduce_dim=False, model_location="../classifier/tree/digit_svm.skm"):
         """
         Return the predicted classes for given pixel input_data (rows of unrolled 27x27 matrices).
@@ -177,33 +173,91 @@ class ClassifierExplainer:
         if isinstance(self.classifier, DecisionTreeClassifier): 
             self.explain_decision_tree()
         else: 
-            self.explain_lda()
+            print "Not a decision tree, explanation not supported"
 
     def explain_decision_tree(self): 
         print("Generating decision tree file")
+        feature_names = [ (i, j) for i in range(28) for j in range(28)]
+        print len(feature_names)
         left      = self.classifier.tree_.children_left
         right     = self.classifier.tree_.children_right
         threshold = self.classifier.tree_.threshold
+        print len(self.classifier.tree_.feature)
         features  = [feature_names[i] for i in self.classifier.tree_.feature]
         value = self.classifier.tree_.value
-        decision_str = ""
-        gen_decision_tree(left, right, threshold, features, value, decision_str)
-        np.savetxt("../output/decision-tree.txt", decision_str)
+        
+        f = open("decision-tree.py", "w") 
+        f.write("import sys\n")
+        f.write("import numpy as np\n")
+        f.write("from DigitReader import ImageReader\n")
+        f.write("img_reader = ImageReader()\n")
+        f.write("features_file = sys.argv[1]\n")
+        f.write("img_reader.readImgFromFile(features_file)\n")
+        f.write("features = img_reader.getPxDataArray()\n")
+        f.write("pixels = []\n")
+        self.gen_decision_tree(left, right, threshold, features, value, 0, 0, f)
+        f.write("with open(\"path.txt\", \'w\') as f: \n\tf.write(\"\\n\".join(str(pixels[0]) + str(pixels[1]))) # save path to file\n")
+        f.write("print(ans)\nprint(pixels)")
+        f.close()
 
-    def explain_lda(self):
-        pass
+    def gen_path_plot(self, path_loc="path.txt"): 
+        with open(path_loc) as f: 
+            path = f.readlines() 
+        for i, p in enumerate(path): 
+            x, y = p.split(" ")
+            path[i] = (int(x), int(y))
+        feature_grid = [[0 for i in range(28)] for j in range(28)]
+        for p in path: 
+            x, y = p
+            print feature_grid[x][y]
+            feature_grid[x][y] = 1
 
-    def gen_decision_tree(self, left, right, threshold, features, node, decision_str):
+        cmap2 = colors.LinearSegmentedColormap.from_list('cmap', ['white', 'black'], 256)
+        img2 = plt.imshow(feature_grid,interpolation='nearest', cmap = cmap2, origin='lower')
+        plt.colorbar(img2,cmap=cmap2)
+        plt.show()
+
+    def gen_feature_plot(self): 
+        features = self.classifier.feature_importances_
+        features = [features[i*28:i*28+28] for i in range(28)]
+        for i in range(28): 
+            for j in range(28): 
+                features[i][j] = float(features[i][j])
+
+        cmap2 = colors.LinearSegmentedColormap.from_list('cmap', ['white', 'black'], 256)
+        img2 = plt.imshow(features,interpolation='nearest', cmap = cmap2, origin='lower')
+        plt.colorbar(img2,cmap=cmap2)
+        plt.show()
+
+    def parse_value(self, values):
+        values = values.tolist()[0]
+        values_pruned = [(i, values[i]) for i in range(len(values)) if values[i] != 0] 
+        comment = ""
+        if len(values_pruned) > 2: 
+            for item in values_pruned: 
+                comment += "# " + str(item[0]) + " also had " + str(item[1]) + " samples here \n"
+
+        ans = str(values.index(max(values)))
+        comment += "# approximately " + str(int(max(values)))
+        comment += " were " + ans + " out of " 
+        comment += str(int(sum(values))) + " samples at leaf node"
+        return int(ans), " " + comment 
+
+    def gen_decision_tree(self, left, right, threshold, features, value, node, depth, f):
+        i, j = features[node]
         if (threshold[node] != -2):
-                decision_str += "if ( " + features[node] + " <= " + str(threshold[node]) + " ) {" + "\n"
+                f.write("\t" * depth + "if features[" + str(i) + "][" + str(j) + "] <= " + str(threshold[node]) + ":" + "\n")
+                f.write("\t" * (depth + 1) + "pixels.append(" + str(features[node]) +")\n")
                 if left[node] != -1:
-                        gen_decision_tree (left, right, threshold, features,left[node])
-                decision_str += "} else {" + "\n"
+                        self.gen_decision_tree (left, right, threshold, features, value, left[node], depth + 1, f)
+                f.write("\t" * depth + "else:" + "\n")
                 if right[node] != -1:
-                        gen_decision_tree (left, right, threshold, features,right[node])
-                decision_str += "}" + "\n"
+                        self.gen_decision_tree (left, right, threshold, features, value, right[node], depth + 1, f)
+                # f.write("\t" * depth + "}" + "\n")
         else:
-                decision_str += "return " + str(value[node]) + "\n"
+                ans, explanation = self.parse_value(value[node])
+                f.write("\t" * depth + "ans = " + str(ans))
+                f.write("\t" * depth + str(explanation) + "\n")
 
 # running the code from the command line:
 if __name__ == '__main__':
@@ -224,10 +278,10 @@ if __name__ == '__main__':
     # -debug turns on debug mode
     debug_flag = "-debug" in sys.argv
 
-    # PCA 
     PCA_flag = "-pca" in sys.argv 
     LDA_flag = "-lda" in sys.argv
     PROB_flag = "-prob" in sys.argv
+    SAVE_flag = "-save" in sys.argv
    
     if LDA_flag:
         print("Using LDA model")
@@ -242,9 +296,7 @@ if __name__ == '__main__':
     if retrain:
         sys.stdout.write("Training the classifier and dumping result to classifier folder " + model_location + "\n")
         digReader.getTrainingDataFromCsv("../data/train.csv")
-
         digReader.trainSVM(model_location)
-            
 
     # predict on the input file if it was given and dump to output.txt:
     if input_file is not None:
@@ -257,9 +309,12 @@ if __name__ == '__main__':
 
         withids = np.transpose(np.array([[i for i in range(1, len(digits) + 1)], digits]))
         name = "../output/output-" + str(datetime.datetime.now()) + ".csv"
-        np.savetxt(name, withids, header='ImageId,Label', delimiter=',', fmt=['%d', '%d'], comments='')
+
+        if SAVE_flag:
+            np.savetxt(name, withids, header='ImageId,Label', delimiter=',', fmt=['%d', '%d'], comments='')
 
     # generate precise or nonprecise explanations
     explainer = ClassifierExplainer(digReader)
     if "-explain-all" in sys.argv: 
         explainer.explain()
+        explainer.gen_path_plot()
