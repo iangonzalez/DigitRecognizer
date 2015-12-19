@@ -2,6 +2,7 @@
 import os
 import numpy as np
 import datetime 
+import subprocess
 
 from sklearn.lda import LDA
 from sklearn.externals import joblib
@@ -165,28 +166,32 @@ class DigitReader:
             results.append(prediction)
         return results
 
+# Class to help generate an explanatory visualization for the decision tree's decision on an image input.
 class ClassifierExplainer: 
     def __init__(self, reader): 
         self.reader = reader
         self.classifier = reader.classifier 
 
-    def explain(self):
+    def explain(self, input_file):
         if isinstance(self.classifier, DecisionTreeClassifier): 
-            self.explain_decision_tree()
+            self.explain_decision_tree(input_file)
         else: 
             print "Not a decision tree, explanation not supported"
 
-    def explain_decision_tree(self): 
+    def explain_decision_tree(self, input_file): 
         print("Generating decision tree file")
         feature_names = [ (i, j) for i in range(28) for j in range(28)]
-        print len(feature_names)
+        #print len(feature_names)
         left      = self.classifier.tree_.children_left
         right     = self.classifier.tree_.children_right
         threshold = self.classifier.tree_.threshold
-        print len(self.classifier.tree_.feature)
+        #print len(self.classifier.tree_.feature)
         features  = [feature_names[i] for i in self.classifier.tree_.feature]
         value = self.classifier.tree_.value
-        
+
+        # generate a python file in decision-tree.py that, when run, will execute
+        # the decision tree and keep track of the nodes traversed:
+       
         f = open("decision-tree.py", "w") 
         f.write("import sys\n")
         f.write("import numpy as np\n")
@@ -195,28 +200,39 @@ class ClassifierExplainer:
         f.write("features_file = sys.argv[1]\n")
         f.write("img_reader.readImgFromFile(features_file)\n")
         f.write("features = img_reader.getPxDataArray()\n")
-        f.write("pixels = []\n")
+        f.write("pixels_low = []\n")
+        f.write("pixels_high = []\n")
         self.gen_decision_tree(left, right, threshold, features, value, 0, 0, f)
-        f.write("with open(\"path.txt\", \'w\') as f: \n\tf.write(\"\\n\".join(str(pixels[0]) + str(pixels[1]))) # save path to file\n")
-        f.write("print(ans)\nprint(pixels)")
+       
+        # the file saves the path through the tree in 2 separate files:
+        f.write("with open(\"path_low.txt\", \'w\') as f: \n\tf.write(\"\\n\".join([str(px[0]) + \" \" + str(px[1]) for px in pixels_low])) # save path to file\n")
+        f.write("with open(\"path_high.txt\", \'w\') as f: \n\tf.write(\"\\n\".join([str(px[0]) + \" \" + str(px[1]) for px in pixels_high])) # save path to file\n")
+
         f.close()
 
-    def gen_path_plot(self, path_loc="path.txt"): 
-        with open(path_loc) as f: 
-            path = f.readlines() 
-        for i, p in enumerate(path): 
-            x, y = p.split(" ")
-            path[i] = (int(x), int(y))
-        feature_grid = [[0 for i in range(28)] for j in range(28)]
-        for p in path: 
-            x, y = p
-            print feature_grid[x][y]
-            feature_grid[x][y] = 1
+        # call the program that was just constructed:
+        subprocess.call(["python", "decision-tree.py", input_file])
 
-        cmap2 = colors.LinearSegmentedColormap.from_list('cmap', ['white', 'black'], 256)
-        img2 = plt.imshow(feature_grid,interpolation='nearest', cmap = cmap2, origin='lower')
-        plt.colorbar(img2,cmap=cmap2)
+
+    def gen_path_plot(self, path_high_loc="path_high.txt", path_low_loc="path_low.txt"): 
+        # read in the pixels that were in the decision tree path and put them into a grid:
+        feature_grid = np.zeros((28,28))
+        for k, path_loc in enumerate([path_high_loc, path_low_loc]):
+            with open(path_loc) as f: 
+                path = f.readlines()
+            for i, p in enumerate(path): 
+                x, y = p.split(" ")
+                path[i] = (int(x), int(y))
+            
+            for p in path: 
+                x, y = p
+                feature_grid[x, y]= float((k+1) * 3) # change value based on whether pixel was high or low
+
+        # plot the visualization:
+        cmap2 = colors.ListedColormap(["white", "red", "blue"])
+        img2 = plt.imshow(feature_grid, interpolation='nearest', cmap = cmap2, origin='lower')
         plt.show()
+
 
     def gen_feature_plot(self): 
         features = self.classifier.feature_importances_
@@ -244,17 +260,19 @@ class ClassifierExplainer:
         comment += str(int(sum(values))) + " samples at leaf node"
         return int(ans), " " + comment 
 
+    #recursively defined function to output python if-else code based on the tree data structure from
+    #the sklearn model:
     def gen_decision_tree(self, left, right, threshold, features, value, node, depth, f):
         i, j = features[node]
         if (threshold[node] != -2):
                 f.write("\t" * depth + "if features[" + str(i) + "][" + str(j) + "] <= " + str(threshold[node]) + ":" + "\n")
-                f.write("\t" * (depth + 1) + "pixels.append(" + str(features[node]) +")\n")
+                f.write("\t" * (depth + 1) + "pixels_low.append(" + str(features[node]) +")\n")
                 if left[node] != -1:
                         self.gen_decision_tree (left, right, threshold, features, value, left[node], depth + 1, f)
                 f.write("\t" * depth + "else:" + "\n")
+                f.write("\t" * (depth + 1) + "pixels_high.append(" + str(features[node]) +")\n")
                 if right[node] != -1:
                         self.gen_decision_tree (left, right, threshold, features, value, right[node], depth + 1, f)
-                # f.write("\t" * depth + "}" + "\n")
         else:
                 ans, explanation = self.parse_value(value[node])
                 f.write("\t" * depth + "ans = " + str(ans))
@@ -286,13 +304,13 @@ if __name__ == '__main__':
    
     if LDA_flag:
         print("Using LDA model")
-        model_location = "../classifier/lda/digit_model.skm"
+        model_location = "../classifier/ldaSmall/digit_model.skm"
     else: 
         print("Using default Tree Classifier model.")
         model_location = "../classifier/tree/digit_model.skm"
     digReader = DigitReader(classifier = LDA_flag, debug = debug_flag)
 
-    # run the model training with dimensionality reduction if model doesnt exist or retrain needed:
+    # run the model training with if retrain needed:
     if retrain:
         sys.stdout.write("Training the classifier and dumping result to classifier folder " + model_location + "\n")
         digReader.getTrainingDataFromCsv("../data/train.csv")
@@ -308,13 +326,14 @@ if __name__ == '__main__':
             digits = digReader.predictDigitFromImgFiles([input_file], reduce_dim = PCA_flag, model_location=model_location)
 
         withids = np.transpose(np.array([[i for i in range(1, len(digits) + 1)], digits]))
-        name = "../output/output-" + str(datetime.datetime.now()) + ".csv"
-
+        name = "../output/output-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M") + ".csv"
+        
+        #if -save, save to a csv named after the time the program was called
         if SAVE_flag:
             np.savetxt(name, withids, header='ImageId,Label', delimiter=',', fmt=['%d', '%d'], comments='')
 
-    # generate precise or nonprecise explanations
-    explainer = ClassifierExplainer(digReader)
-    if "-explain-all" in sys.argv: 
-        explainer.explain()
-        explainer.gen_path_plot()
+        # generate the explanation if necessary and produce the plot:
+        explainer = ClassifierExplainer(digReader)
+        if "-explain-all" in sys.argv: 
+            explainer.explain(input_file)
+            explainer.gen_path_plot()
